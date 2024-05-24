@@ -22,7 +22,7 @@ import java.util.UUID;
 @Slf4j
 public class OrderService {
 
-    private final WebClient webClient;
+    private final WebClient.Builder webClientBuilder;
 
     private final OrderRepository orderRepository;
 
@@ -42,8 +42,8 @@ public class OrderService {
                         .map(OrderLineItems::getSkuCode)
                         .toList();
 
-        InventoryResponse []inventoryResponses = webClient.get()
-                .uri("http://localhost:8081/api/inventory", uriBuilder -> uriBuilder.queryParam("skuCode", skuCodes).build())
+        InventoryResponse []inventoryResponses = webClientBuilder.build().get()
+                .uri("http://inventory-service:8081/api/inventory", uriBuilder -> uriBuilder.queryParam("skuCode", skuCodes).build())
                 .retrieve()
                 .bodyToMono(InventoryResponse[].class)
                 .block();
