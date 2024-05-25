@@ -26,7 +26,7 @@ public class OrderService {
 
     private final OrderRepository orderRepository;
 
-    public void placeOrder(OrderRequest orderRequest) {
+    public String placeOrder(OrderRequest orderRequest) {
 
         Order order = new Order();
 
@@ -56,6 +56,7 @@ public class OrderService {
 
         if (allProductsInStock) {
             orderRepository.save(order);
+            return "Order Saved Successfully";
         } else {
             throw new IllegalArgumentException("Inventory is not there");
         }
