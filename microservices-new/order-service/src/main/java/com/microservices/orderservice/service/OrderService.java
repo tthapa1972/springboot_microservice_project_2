@@ -3,6 +3,7 @@ package com.microservices.orderservice.service;
 import com.microservices.orderservice.dto.InventoryResponse;
 import com.microservices.orderservice.dto.OrderLineItemsDto;
 import com.microservices.orderservice.dto.OrderRequest;
+import com.microservices.orderservice.event.OrderPlacedEvent;
 import com.microservices.orderservice.model.Order;
 import com.microservices.orderservice.model.OrderLineItems;
 import com.microservices.orderservice.repository.OrderRepository;
@@ -10,6 +11,7 @@ import io.micrometer.tracing.Span;
 import io.micrometer.tracing.Tracer;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.reactive.function.client.WebClient;
@@ -29,6 +31,8 @@ public class OrderService {
     private final OrderRepository orderRepository;
 
     private final Tracer tracer;
+
+    private final KafkaTemplate<String, OrderPlacedEvent> kafkaTemplate;
 
     public String placeOrder(OrderRequest orderRequest) {
 
@@ -56,6 +60,7 @@ public class OrderService {
                     .bodyToMono(InventoryResponse[].class)
                     .block();
 
+            assert inventoryResponses != null;
             boolean allProductsInStock = Arrays.stream(inventoryResponses).allMatch(inventoryResponse -> inventoryResponse.isInStock());
 
             log.info("inventoryResponses : " + Arrays.toString(inventoryResponses));
@@ -64,6 +69,7 @@ public class OrderService {
 
             if (allProductsInStock) {
                 orderRepository.save(order);
+                kafkaTemplate.send("notificationTopic", new OrderPlacedEvent(order.getOrderNumber()));
                 return "Order Saved Successfully";
             } else {
                 throw new IllegalArgumentException("Inventory is not there");
