@@ -6,6 +6,8 @@ import com.microservices.orderservice.dto.OrderRequest;
 import com.microservices.orderservice.model.Order;
 import com.microservices.orderservice.model.OrderLineItems;
 import com.microservices.orderservice.repository.OrderRepository;
+import io.micrometer.tracing.Span;
+import io.micrometer.tracing.Tracer;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -26,6 +28,8 @@ public class OrderService {
 
     private final OrderRepository orderRepository;
 
+    private final Tracer tracer;
+
     public String placeOrder(OrderRequest orderRequest) {
 
         Order order = new Order();
@@ -42,23 +46,30 @@ public class OrderService {
                         .map(OrderLineItems::getSkuCode)
                         .toList();
 
-        InventoryResponse []inventoryResponses = webClientBuilder.build().get()
-                .uri("http://inventory-service:8081/api/inventory", uriBuilder -> uriBuilder.queryParam("skuCode", skuCodes).build())
-                .retrieve()
-                .bodyToMono(InventoryResponse[].class)
-                .block();
+        Span inventoryServiceLookUp = tracer.nextSpan().name("InventoryServiceLookUp");
 
-        boolean allProductsInStock = Arrays.stream(inventoryResponses).allMatch(inventoryResponse -> inventoryResponse.isInStock());
+        try (Tracer.SpanInScope spanInScope = tracer.withSpan(inventoryServiceLookUp.start())) {
 
-        log.info("inventoryResponses : "+ Arrays.toString(inventoryResponses));
+            InventoryResponse[] inventoryResponses = webClientBuilder.build().get()
+                    .uri("http://inventory-service:8282/api/inventory", uriBuilder -> uriBuilder.queryParam("skuCode", skuCodes).build())
+                    .retrieve()
+                    .bodyToMono(InventoryResponse[].class)
+                    .block();
 
-        log.info("allProductsInStock : "+ allProductsInStock);
+            boolean allProductsInStock = Arrays.stream(inventoryResponses).allMatch(inventoryResponse -> inventoryResponse.isInStock());
 
-        if (allProductsInStock) {
-            orderRepository.save(order);
-            return "Order Saved Successfully";
-        } else {
-            throw new IllegalArgumentException("Inventory is not there");
+            log.info("inventoryResponses : " + Arrays.toString(inventoryResponses));
+
+            log.info("allProductsInStock : " + allProductsInStock);
+
+            if (allProductsInStock) {
+                orderRepository.save(order);
+                return "Order Saved Successfully";
+            } else {
+                throw new IllegalArgumentException("Inventory is not there");
+            }
+        } finally {
+            inventoryServiceLookUp.end();
         }
 
     }
